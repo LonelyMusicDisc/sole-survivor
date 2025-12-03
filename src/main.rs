@@ -1,12 +1,14 @@
+use crate::components::*;
 use avian2d::{math::*, prelude::*};
 use bevy::prelude::*;
 
+mod components;
+mod player;
+
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, PhysicsPlugins::default()))
-        .add_message::<MovementAction>()
+        .add_plugins((DefaultPlugins, PhysicsPlugins::default(), player::plugin))
         .add_systems(Startup, setup)
-        .add_systems(Update, (handle_keyboard, movement).chain())
         .add_systems(Update, (despawn_dead_entities, chase_player))
         .run();
 }
@@ -57,7 +59,7 @@ fn setup(mut commands: Commands) {
         Collider::circle(10.0),
         LinearDamping(100.0),
         LockedAxes::ROTATION_LOCKED,
-        MovementSpeed(180.0),
+        MovementSpeed(6000.0),
         Health(20),
         Damage(10),
         Enemy,
@@ -76,70 +78,11 @@ fn setup(mut commands: Commands) {
         LinearDamping(100.0),
         LockedAxes::ROTATION_LOCKED,
         Transform::from_xyz(-15.0, -5.0, 1.0),
-        MovementSpeed(180.0),
+        MovementSpeed(6000.0),
         Health(20),
         Damage(10),
         Enemy,
     ));
-}
-
-#[derive(Component)]
-struct Player;
-
-#[derive(Component)]
-struct Enemy;
-
-#[derive(Component)]
-struct Health(i32);
-
-#[derive(Component)]
-struct Damage(i32);
-
-#[derive(Component)]
-struct MovementSpeed(f32);
-
-#[derive(Message, Debug, Reflect)]
-enum MovementAction {
-    Move(Vec2),
-}
-
-fn handle_keyboard(
-    mut messages: MessageWriter<MovementAction>,
-    keycode: Res<ButtonInput<KeyCode>>,
-) {
-    let left = keycode.pressed(KeyCode::KeyA);
-    let right = keycode.pressed(KeyCode::KeyD);
-    let up = keycode.pressed(KeyCode::KeyW);
-    let down = keycode.pressed(KeyCode::KeyS);
-
-    let horizontal = right as i8 - left as i8;
-    let vertical = up as i8 - down as i8;
-    let direction = Vec2::new(horizontal as Scalar, vertical as Scalar);
-    if direction == Vec2::ZERO {
-        return;
-    };
-    messages.write(MovementAction::Move(direction));
-}
-
-fn movement(
-    time: Res<Time>,
-    mut movement_messages: MessageReader<MovementAction>,
-    player: Single<(&mut LinearVelocity, &MovementSpeed), With<Player>>,
-) {
-    let (mut linear_velocity, speed) = player.into_inner();
-    let delta_time = time.delta_secs();
-
-    linear_velocity.x = 0.0;
-    linear_velocity.y = 0.0;
-
-    for message in movement_messages.read() {
-        match message {
-            MovementAction::Move(direction) => {
-                linear_velocity.x += direction.x * speed.0 * delta_time;
-                linear_velocity.y += direction.y * speed.0 * delta_time;
-            }
-        }
-    }
 }
 
 fn chase_player(
@@ -148,9 +91,11 @@ fn chase_player(
     player: Single<&Position, (With<Player>, Without<Enemy>)>,
 ) {
     let delta_time = time.delta_secs();
+    let player_position = Vec2::new(player.x, player.y);
 
     for (mut velocity, position, speed) in enemy_query {
-        let direction = Vec2::new(player.x - position.x, player.y - position.y);
+        let enemy_position = Vec2::new(position.x, position.y);
+        let direction = (player_position - enemy_position).normalize();
 
         velocity.x += direction.x * speed.0 * delta_time;
         velocity.y += direction.y * speed.0 * delta_time;
